@@ -43,23 +43,30 @@ def transform_and_load_data():
     engine = create_engine('postgres+psycopg2://postgres:postgres@postgres-data/postgres')
     conn = engine.raw_connection()
 
-    df = pd.read_sql(f'SELECT id, country_id, league_id, season, stage, date, home_team_api_id, away_team_api_id, \
-                     home_team_goal, away_team_goal, goal FROM silver_match', conn)
-    
+    df = pd.read_sql('''SELECT id, country_id, league_id, season, stage, date, home_team_api_id, away_team_api_id, 
+                        home_team_goal, away_team_goal FROM silver_match''', conn)
+
     df_team = pd.read_sql(f'SELECT team_api_id, team_long_name FROM silver_team', conn)
 
     df_country = pd.read_sql(f'SELECT id, name FROM silver_country', conn)
 
     df_league = pd.read_sql(f'SELECT id, name FROM silver_league', conn)
 
-    df_joined_home = pd.merge(df, df_team, left_on='home_team_api_id', right_on='team_api_id', how='inner', suffixes=('_lefthome', '_righthome'))
-    df_joined_away = pd.merge(df_joined_home, df_team, left_on='away_team_api_id', right_on='team_api_id', how='inner', suffixes=('_leftaway', '_rightaway'))
-    df_joined_country= pd.merge(df_joined_away, df_country, left_on='country_id', right_on='id', how='inner', suffixes=('_leftcountry', '_rightcountry'))
-    df_joined_league= pd.merge(df_joined_country, df_league, left_on='league_id', right_on='id', how='inner', suffixes=('_leftleague', '_rightleague'))
+    df_joined_home = pd.merge(df, df_team, left_on='home_team_api_id', right_on='team_api_id', how='inner')
+    df_joined_home.rename(columns={'team_long_name': 'home_team'}, inplace=True)
+    df_joined_home.drop(columns={'home_team_api_id', 'team_api_id'}, inplace=True)
 
-    # df_joined_league = df_joined_league['id, name_rightcountry, name_rightleague, season, stage, date, team_long_name_righthome, team_long_name_rightaway, \
-    #                  home_team_goal, away_team_goal, goal']
-    # df_joined_league = df_joined_league.rename(columns={'name_rightcountry' : 'country', 'name_rightleague' : 'league',\
-    #                                                     'team_long_name_righthome' : 'home_team', 'team_long_name_rightaway': 'away_team'}, inplace=True)
+    df_joined_away = pd.merge(df_joined_home, df_team, left_on='away_team_api_id', right_on='team_api_id', how='inner')
+    df_joined_away.rename(columns={'team_long_name': 'away_team'}, inplace=True)
+    df_joined_away.drop(columns={'away_team_api_id', 'team_api_id'}, inplace=True)
 
+    df_joined_country= pd.merge(df_joined_away, df_country, left_on='country_id', right_on='id', how='inner', suffixes=('', '_remove')).drop({'id_remove', 'country_id'}, axis=1)
+    df_joined_country.rename(columns={'name': 'country'}, inplace=True)
+
+    df_joined_league= pd.merge(df_joined_country, df_league, left_on='league_id', right_on='id', how='inner', suffixes=('', '_remove')).drop({'id_remove', 'league_id'}, axis=1)
+    df_joined_league.rename(columns={'name': 'league'}, inplace=True)
+
+    column_names = ['id', 'country', 'league', 'season', 'stage', 'date', 'home_team', 'away_team', 'home_team_goal', 'away_team_goal']
+
+    df_joined_league = df_joined_league.reindex(columns=column_names)
     df_joined_league.to_sql(name=f'gold_match', con=engine, if_exists='replace', index=False)
